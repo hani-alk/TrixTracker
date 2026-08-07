@@ -677,10 +677,12 @@ a { color: inherit; }
   // In a Complex hand every penalty card lives inside a trick someone took, so a
   // player holding more penalties than their tricks could hold means a miscount.
   function complexConflicts(data, names) {
+    // Until the tricks are all accounted for there is nothing to measure against.
+    if (sum(data.tricks) !== TRICKS_PER_HAND) return [];
+
     const notes = [];
     const queensTaken = zeroes();
     data.queens.forEach((q) => { if (q.taker != null) queensTaken[q.taker]++; });
-    if (sum(data.tricks) !== TRICKS_PER_HAND) return notes;
 
     names.forEach((name, i) => {
       const capacity = data.tricks[i] * 4;   // four cards to a trick
