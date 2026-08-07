@@ -63,7 +63,9 @@ body { -webkit-text-size-adjust: 100%; }
   padding: 18px 16px 40px;
   -webkit-tap-highlight-color: transparent;
 }
-.app button {
+/* Wrapped in :where() so this reset carries no specificity — otherwise `.app button`
+   would outrank single-class rules like `.chip` and strip their surfaces. */
+:where(.app button) {
   font-family: inherit;
   cursor: pointer;
   border: none;
@@ -787,11 +789,15 @@ a { color: inherit; }
     setState({ game: null, sheet: null, draft: null });
   }
 
+  // Edits happen on a copy, so closing the sheet without saving changes nothing.
+  // The data round-trips through localStorage as JSON anyway, so JSON is a faithful clone.
+  const cloneData = (data) => JSON.parse(JSON.stringify(data));
+
   function openHand(contract, index) {
     const existing = index != null ? state.game.hands[index] : null;
     setState({
       sheet: { contract, index },
-      draft: existing ? structuredClone(existing.data) : blankHandData(contract),
+      draft: existing ? cloneData(existing.data) : blankHandData(contract),
     });
   }
 
