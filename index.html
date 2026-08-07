@@ -736,10 +736,12 @@ a { color: inherit; }
 
   const root = document.getElementById('root');
 
+  const blankSetup = () => ({ names: ['', '', '', ''], startIdx: null, mode: 'complex' });
+
   const state = {
     game: storage.load(),        // null until a game is set up
     sheet: null,                 // { contract, index } while a hand is open
-    setup: { names: ['', '', '', ''], startIdx: null, mode: 'complex' },
+    setup: blankSetup(),         // the setup form, discarded once a game starts
     draft: null,                 // the hand being edited in the sheet
   };
 
@@ -760,9 +762,13 @@ a { color: inherit; }
     const sheetBody = root.querySelector('.sheet-body');
     const sheetScroll = sheetBody ? sheetBody.scrollTop : 0;
 
-    const screens = [el('div', { class: 'app' }, state.game ? Board() : Setup(), Colophon())];
-    if (state.sheet) screens.push(Sheet());
-    root.replaceChildren(...screens);
+    // The sheet lives inside .app — that is where the colour, font and button reset are
+    // inherited from. It still covers the screen, because .sheet-wrap is position:fixed.
+    root.replaceChildren(el('div', { class: 'app' },
+      state.game ? Board() : Setup(),
+      Colophon(),
+      state.sheet ? Sheet() : null,
+    ));
 
     window.scrollTo(0, pageScroll);
     const nextSheetBody = root.querySelector('.sheet-body');
@@ -788,7 +794,7 @@ a { color: inherit; }
 
   function resetGame() {
     storage.clear();
-    setState({ game: null, sheet: null, draft: null });
+    setState({ game: null, sheet: null, draft: null, setup: blankSetup() });
   }
 
   // Edits happen on a copy, so closing the sheet without saving changes nothing.
