@@ -89,6 +89,9 @@ a { color: inherit; }
 }
 .num-text { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .stack { display: flex; flex-direction: column; gap: 8px; }
+.label.first { margin-top: 4px; }
+.label-row { display: flex; justify-content: space-between; align-items: center; margin: 24px 0 10px; }
+.label-row .label { margin: 0; }
 
 /* ==========================================================================
    Controls
@@ -231,6 +234,14 @@ a { color: inherit; }
 }
 .row:last-child { border-bottom: none; }
 .row.winner { background: var(--wash); box-shadow: inset 3px 0 0 var(--cream); }
+.place-badge {
+  flex: none;
+  width: 26px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--faint);
+}
+.place-badge.lead { color: var(--cream); }
 .who { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .name {
   font-size: 16px;
@@ -440,9 +451,11 @@ a { color: inherit; }
   opacity: 0.5;
 }
 .rank.on { opacity: 1; border-color: var(--line-strong); }
+.rank.lead { border-color: var(--cream); background: var(--wash); }
 .place { font-family: var(--mono); font-size: 12px; color: var(--dim); width: 28px; }
 .rank-name { flex: 1; font-size: 14px; font-weight: 600; }
-.points { font-family: var(--mono); font-size: 13px; }
+.points { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+.points.down { color: var(--red); }
 
 .conflict {
   margin-top: 12px;
@@ -476,6 +489,102 @@ a { color: inherit; }
 .preview-value.down { color: var(--red); }
 .sheet-actions { display: flex; gap: 8px; }
 .sheet-actions .primary { margin-top: 0; }
+
+.secondary {
+  flex: none;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  color: var(--cream);
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ==========================================================================
+   Scorecard ledger
+   ========================================================================== */
+.sheet-sub { color: var(--dim); font-size: 13px; margin-top: 3px; }
+
+.ledger-wrap { overflow-x: auto; }
+.ledger {
+  width: 100%;
+  min-width: 340px;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+.ledger th, .ledger td { padding: 7px 4px; text-align: right; }
+.ledger thead th {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--line);
+}
+.ledger-contract, .ledger thead td, .ledger tfoot th { width: 32%; text-align: left; }
+.ledger-contract {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cream);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ledger-value {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--faint);
+}
+.ledger-value.up { color: var(--cream); }
+.ledger-value.down { color: var(--red); }
+.ledger-kingdom td {
+  padding: 16px 0 4px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+.ledger tfoot tr { border-top: 1px solid var(--line-strong); }
+.ledger tfoot th {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.ledger tfoot .ledger-value { font-size: 14px; font-weight: 700; color: var(--cream); }
+.ledger tfoot .ledger-value.down { color: var(--red); }
+
+/* ==========================================================================
+   Toast
+   ========================================================================== */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(28px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 60;
+  background: var(--cream);
+  color: var(--ink);
+  padding: 11px 18px;
+  border-radius: var(--radius);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  animation: rise 0.18s ease-out;
+}
 
 /* ==========================================================================
    Colophon
@@ -519,7 +628,7 @@ a { color: inherit; }
     diamonds:     { name: 'Diamonds',       ar: 'ديناري',  glyph: '♦',  cost: '−10 each', total: -130, red: true },
     queens:       { name: 'Queens',         ar: 'بنات',    glyph: 'Q',  cost: '−25 each', total: -100 },
     collection:   { name: 'Tricks',         ar: 'لطوشة',   glyph: '≡',  cost: '−15 each', total: -195 },
-    trix:         { name: 'Trix',           ar: 'تريكس',   glyph: 'J',  cost: '+500',     total: 500 },
+    trix:         { name: 'Trix',           ar: 'تركس',   glyph: 'J',  cost: '+500',     total: 500 },
   };
 
   // The two ways a kingdom gets dealt out.
@@ -674,6 +783,30 @@ a { color: inherit; }
     return scores;
   }
 
+  const runningTotals = (hands) => {
+    const totals = zeroes();
+    hands.forEach((hand) => scoreHand(hand).forEach((points, i) => { totals[i] += points; }));
+    return totals;
+  };
+
+  // Players ordered best-first. Ties share a place and consume the ones below it,
+  // so two players level at the top are both 1st and the next is 3rd.
+  function standings(totals) {
+    const ordered = totals
+      .map((points, player) => ({ player, points }))
+      .sort((a, b) => b.points - a.points);
+
+    let place = 1;
+    return ordered.map((entry, i) => {
+      if (i > 0 && entry.points < ordered[i - 1].points) place = i + 1;
+      return { ...entry, place };
+    });
+  }
+
+  // "Ann", "Ann & Bo", "Ann, Bo & Cy"
+  const joinNames = (list) =>
+    list.length < 2 ? (list[0] || '') : `${list.slice(0, -1).join(', ')} & ${list[list.length - 1]}`;
+
   // In a Complex hand every penalty card lives inside a trick someone took, so a
   // player holding more penalties than their tricks could hold means a miscount.
   function complexConflicts(data, names) {
@@ -741,8 +874,10 @@ a { color: inherit; }
   const state = {
     game: storage.load(),        // null until a game is set up
     sheet: null,                 // { contract, index } while a hand is open
+    history: false,              // true while the history sheet is open
     setup: blankSetup(),         // the setup form, discarded once a game starts
     draft: null,                 // the hand being edited in the sheet
+    toast: null,                 // transient confirmation message
   };
 
   function setState(changes) {
@@ -767,7 +902,8 @@ a { color: inherit; }
     root.replaceChildren(el('div', { class: 'app' },
       state.game ? Board() : Setup(),
       Colophon(),
-      state.sheet ? Sheet() : null,
+      state.sheet ? Sheet() : state.history ? HistorySheet() : null,
+      state.toast ? el('p', { class: 'toast' }, state.toast) : null,
     ));
 
     window.scrollTo(0, pageScroll);
@@ -826,7 +962,90 @@ a { color: inherit; }
   const closeSheet = () => setState({ sheet: null, draft: null });
   const updateDraft = (changes) => setState({ draft: { ...state.draft, ...changes } });
 
+  const openHistory = () => setState({ history: true, sheet: null, draft: null });
+  const closeHistory = () => setState({ history: false });
+
   const displayNames = (names) => names.map((n, i) => n.trim() || `Player ${i + 1}`);
+
+  /* ========================================================================
+     Sharing
+     ====================================================================== */
+
+  let toastTimer = null;
+
+  function flash(message) {
+    clearTimeout(toastTimer);
+    setState({ toast: message });
+    toastTimer = setTimeout(() => setState({ toast: null }), 2400);
+  }
+
+  // The scorecard as plain text, built to stay readable in a chat app where
+  // nothing is aligned and no monospace font is guaranteed.
+  function historyText() {
+    const { names, startIdx, hands, mode } = state.game;
+    const perKingdom = MODES[mode].contracts.length;
+    const totals = runningTotals(hands);
+    const finished = hands.length === perKingdom * KINGDOMS;
+
+    const lines = [`TRIX · ${MODES[mode].label}`];
+    lines.push(finished
+      ? 'Final result'
+      : `After ${hands.length} hand${hands.length === 1 ? '' : 's'}`);
+    lines.push('');
+
+    standings(totals).forEach(({ player, points, place }) => {
+      lines.push(`${PLACES[place - 1]}  ${names[player]}  ${signed(points)}`);
+    });
+
+    hands.forEach((hand, i) => {
+      const kingdom = Math.floor(i / perKingdom);
+      if (i % perKingdom === 0) {
+        lines.push('');
+        lines.push(`Kingdom ${kingdom + 1} — ${names[(startIdx + kingdom) % PLAYERS]}`);
+      }
+      const scores = scoreHand(hand);
+      const detail = names.map((name, p) => `${name} ${signed(scores[p])}`).join(', ');
+      lines.push(`  ${CONTRACTS[hand.contract].name}: ${detail}`);
+    });
+
+    return lines.join('\n');
+  }
+
+  // navigator.clipboard needs a secure context, which a file:// page is not.
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise((resolve, reject) => {
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.append(area);
+      area.select();
+      const copied = document.execCommand('copy');
+      area.remove();
+      copied ? resolve() : reject(new Error('copy rejected'));
+    });
+  }
+
+  async function copyHistory() {
+    try {
+      await copyText(historyText());
+      flash('Copied to clipboard');
+    } catch {
+      flash("Couldn't copy");
+    }
+  }
+
+  async function shareHistory() {
+    try {
+      await navigator.share({ title: 'Trix scorecard', text: historyText() });
+    } catch (err) {
+      // Dismissing the share sheet is not a failure worth reporting.
+      if (!err || err.name !== 'AbortError') copyHistory();
+    }
+  }
 
   /* ========================================================================
      Setup screen
@@ -840,7 +1059,7 @@ a { color: inherit; }
       el('header', { class: 'brand' },
         el('h1', null, 'Trix'),
         el('div', { class: 'rule' }),
-        el('p', { class: 'ar' }, 'تريكس'),
+        el('p', { class: 'ar' }, 'تركس'),
       ),
       el('p', { class: 'hint' }, 'Enter everyone in seating order, going right around the table.'),
 
@@ -890,8 +1109,7 @@ a { color: inherit; }
     const contracts = MODES[state.game.mode].contracts;
     const perKingdom = contracts.length;
 
-    const totals = zeroes();
-    hands.forEach((hand) => scoreHand(hand).forEach((points, i) => { totals[i] += points; }));
+    const totals = runningTotals(hands);
     const lastHand = hands.length ? scoreHand(hands[hands.length - 1]) : null;
 
     const kingdom = Math.floor(hands.length / perKingdom);
@@ -901,7 +1119,12 @@ a { color: inherit; }
     const playedThisKingdom = hands.slice(kingdom * perKingdom).map((h) => h.contract);
     const remaining = contracts.filter((c) => !playedThisKingdom.includes(c));
 
-    const best = Math.max(...totals);
+    // Standings so far — shown from the first hand on, not just at the end.
+    const ranked = standings(totals);
+    const placeOf = zeroes();
+    ranked.forEach(({ player, place }) => { placeOf[player] = place; });
+    const leaders = ranked.filter((r) => r.place === 1).map((r) => names[r.player]);
+    const outcome = leaders.length === 1 ? `${leaders[0]} wins` : `${joinNames(leaders)} tie`;
 
     // Hands only net to zero across a full kingdom (−500 of losing games, +500 of Trix),
     // so the running total is measured against what the hands played so far should net —
@@ -914,7 +1137,7 @@ a { color: inherit; }
         el('div', null,
           el('h1', null, 'Trix'),
           el('p', { class: 'eyebrow' },
-            finished ? 'Game complete' : `Kingdom ${kingdom + 1} of ${KINGDOMS} · ${names[dealer]}`),
+            finished ? outcome : `Kingdom ${kingdom + 1} of ${KINGDOMS} · ${names[dealer]}`),
         ),
         el('div', { class: 'tools' },
           hands.length > 0 &&
@@ -924,7 +1147,10 @@ a { color: inherit; }
       ),
 
       el('section', { class: 'scores' }, names.map((name, i) =>
-        el('div', { class: classes('row', finished && totals[i] === best && 'winner') },
+        el('div', { class: classes('row', finished && placeOf[i] === 1 && 'winner') },
+          hands.length > 0 &&
+            el('span', { class: classes('place-badge', placeOf[i] === 1 && 'lead') },
+              PLACES[placeOf[i] - 1]),
           el('div', { class: 'who' },
             el('span', { class: 'name' }, name),
             !finished && i === dealer && el('span', { class: 'tag' }, 'kingdom'),
@@ -957,7 +1183,11 @@ a { color: inherit; }
       ),
 
       el('section', null,
-        el('p', { class: 'label' }, 'The four kingdoms'),
+        el('div', { class: 'label-row' },
+          el('p', { class: 'label' }, 'The four kingdoms'),
+          hands.length > 0 &&
+            el('button', { class: 'ghost', onClick: openHistory }, 'History'),
+        ),
         el('div', { class: 'grid' }, Array.from({ length: KINGDOMS }, (_, row) =>
           el('div', { class: 'grid-row' },
             el('span', { class: 'grid-name' }, names[(startIdx + row) % PLAYERS]),
@@ -1061,6 +1291,92 @@ a { color: inherit; }
               index != null ? 'Save changes' : 'Save hand'),
           ),
         ),
+      ),
+    );
+  }
+
+  /* ========================================================================
+     History sheet
+     ====================================================================== */
+
+  function HistorySheet() {
+    const { names, startIdx, hands, mode } = state.game;
+    const perKingdom = MODES[mode].contracts.length;
+    const totals = runningTotals(hands);
+    const finished = hands.length === perKingdom * KINGDOMS;
+
+    return el('div', { class: 'sheet-wrap', onClick: closeHistory },
+      el('div', { class: 'sheet', onClick: (e) => e.stopPropagation() },
+        el('div', { class: 'handle' }),
+
+        el('header', { class: 'sheet-head' },
+          el('div', null,
+            el('h2', null, 'Scorecard'),
+            el('p', { class: 'sheet-sub' }, finished
+              ? 'Final result'
+              : `${hands.length} hand${hands.length === 1 ? '' : 's'} played`),
+          ),
+          el('button', { class: 'ghost', onClick: closeHistory }, 'Close'),
+        ),
+
+        el('div', { class: 'sheet-body' },
+          el('p', { class: 'label first' }, finished ? 'Final standings' : 'Standings so far'),
+          el('div', { class: 'ranks' }, standings(totals).map(({ player, points, place }) =>
+            el('div', { class: classes('rank', 'on', place === 1 && 'lead') },
+              el('span', { class: 'place' }, PLACES[place - 1]),
+              el('span', { class: 'rank-name' }, names[player]),
+              el('span', { class: classes('points', points < 0 && 'down') }, signed(points)),
+            ),
+          )),
+
+          el('p', { class: 'label' }, 'Every hand'),
+          Ledger({ names, startIdx, hands, perKingdom, totals }),
+        ),
+
+        el('footer', { class: 'sheet-foot' },
+          el('div', { class: 'sheet-actions' },
+            navigator.share &&
+              el('button', { class: 'secondary', onClick: shareHistory }, 'Share'),
+            el('button', { class: 'primary', onClick: copyHistory }, 'Copy scorecard'),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Hand-by-hand points, grouped into the kingdom each hand belongs to.
+  function Ledger({ names, startIdx, hands, perKingdom, totals }) {
+    const rows = [];
+
+    hands.forEach((hand, i) => {
+      if (i % perKingdom === 0) {
+        const kingdom = i / perKingdom;
+        rows.push(el('tr', { class: 'ledger-kingdom' },
+          el('td', { colSpan: names.length + 1 },
+            `Kingdom ${kingdom + 1} · ${names[(startIdx + kingdom) % PLAYERS]}`),
+        ));
+      }
+      const scores = scoreHand(hand);
+      rows.push(el('tr', null,
+        el('th', { class: 'ledger-contract', scope: 'row' }, CONTRACTS[hand.contract].name),
+        scores.map((points) =>
+          el('td', { class: classes('ledger-value', points > 0 && 'up', points < 0 && 'down') },
+            signed(points))),
+      ));
+    });
+
+    return el('div', { class: 'ledger-wrap' },
+      el('table', { class: 'ledger' },
+        el('thead', null, el('tr', null,
+          el('td', null),
+          names.map((name) => el('th', { scope: 'col' }, name)),
+        )),
+        el('tbody', null, rows),
+        el('tfoot', null, el('tr', null,
+          el('th', { scope: 'row' }, 'Total'),
+          totals.map((points) =>
+            el('td', { class: classes('ledger-value', points < 0 && 'down') }, signed(points))),
+        )),
       ),
     );
   }
