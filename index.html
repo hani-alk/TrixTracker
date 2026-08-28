@@ -179,6 +179,8 @@ a { color: inherit; }
   letter-spacing: 0.06em;
   font-size: 13px;
 }
+.danger.wide { width: 100%; }
+.danger.armed { background: var(--red); border-color: var(--red); color: var(--cream); }
 
 .ghost {
   padding: 8px 12px;
@@ -205,6 +207,41 @@ a { color: inherit; }
   color: var(--dim);
 }
 .toggle.on { background: var(--cream); border-color: var(--cream); color: var(--ink); }
+.toggle.back { margin: 0 0 4px; }
+
+/* ==========================================================================
+   Past games
+   ========================================================================== */
+.past {
+  width: 100%;
+  text-align: left;
+  padding: 13px 14px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.past.on { background: var(--wash); border-color: var(--cream); }
+.past-line { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.past-who {
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.past-score {
+  flex: none;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--dim);
+}
+.past-score.down { color: var(--red); }
+.past-meta { font-size: 11px; color: var(--dim); line-height: 1.45; }
 
 /* ==========================================================================
    Setup screen
@@ -606,6 +643,7 @@ a { color: inherit; }
 .preview-value.up { color: var(--cream); }
 .preview-value.down { color: var(--red); }
 .sheet-actions { display: flex; gap: 8px; }
+.sheet-actions + .sheet-actions { margin-top: 8px; }
 .sheet-actions .primary { margin-top: 0; }
 
 .secondary {
@@ -777,6 +815,8 @@ a { color: inherit; }
      ====================================================================== */
 
   const STORAGE_KEY = 'trix:game:v2';
+  const ARCHIVE_KEY = 'trix:archive:v1';
+  const ARCHIVE_LIMIT = 20;      // enough to cover a season; the oldest falls off the end
 
   const storage = {
     load() {
@@ -785,6 +825,21 @@ a { color: inherit; }
         return raw ? JSON.parse(raw) : null;
       } catch {
         return null;
+      }
+    },
+    loadArchive() {
+      try {
+        const list = JSON.parse(localStorage.getItem(ARCHIVE_KEY));
+        return Array.isArray(list) ? list : [];
+      } catch {
+        return [];
+      }
+    },
+    saveArchive(list) {
+      try {
+        localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list));
+      } catch {
+        /* private mode / quota — see save() */
       }
     },
     save(game) {
@@ -1012,6 +1067,15 @@ a { color: inherit; }
   const classes = (...names) => names.filter(Boolean).join(' ');
   const signed = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n);
 
+  // "28 Aug" for a game from this year, "28 Aug 2025" for anything older.
+  function shortDate(stamp) {
+    if (!stamp) return '';
+    const date = new Date(stamp);
+    const parts = { day: 'numeric', month: 'short' };
+    if (date.getFullYear() !== new Date().getFullYear()) parts.year = 'numeric';
+    return date.toLocaleDateString(undefined, parts);
+  }
+
   /* ========================================================================
      State
      ====================================================================== */
@@ -1021,21 +1085,29 @@ a { color: inherit; }
   const blankSetup = () => ({ names: ['', '', '', ''], startIdx: null, mode: 'complex' });
 
   const state = {
-    game: storage.load(),        // null until a game is set up
-    sheet: null,                 // { contract, index } while a hand is open
-    history: false,              // true while the history sheet is open
-    setup: blankSetup(),         // the setup form, discarded once a game starts
-    draft: null,                 // the hand being edited in the sheet
-    toast: null,                 // transient confirmation message
-    confirmReset: false,         // true once "New game" has been armed but not confirmed
+    game: storage.load(),            // null until a game is set up
+    archive: storage.loadArchive(),  // games already played, newest first
+    sheet: null,                     // { contract, index } while a hand is open
+    history: null,                   // { gameId } while a scorecard is open; null id = the game in play
+    setup: blankSetup(),             // the setup form, discarded once a game starts
+    draft: null,                     // the hand being edited in the sheet
+    toast: null,                     // transient confirmation message
+    confirmReset: false,             // true once "New game" has been armed but not confirmed
+    confirmDelete: null,             // id of the past game whose delete has been armed
   };
 
+  // A half-pressed destructive button must never lie in wait for the next tap, so
+  // anything other than arming one of these puts them all back.
+  const DISARMED = { confirmReset: false, confirmDelete: null };
+
   function setState(changes) {
-    // Anything other than arming it disarms the "New game" confirmation, so a
-    // half-pressed reset never lies in wait for the next tap.
-    if (!('confirmReset' in changes)) changes = { ...changes, confirmReset: false };
-    Object.assign(state, changes);
+    const disarm = {};
+    for (const [armed, off] of Object.entries(DISARMED)) {
+      if (!(armed in changes)) disarm[armed] = off;
+    }
+    Object.assign(state, changes, disarm);
     if (state.game) storage.save(state.game);
+    if ('archive' in changes) storage.saveArchive(state.archive);
     render();
   }
 
@@ -1100,12 +1172,51 @@ a { color: inherit; }
 
   function startGame() {
     const { names, startIdx, mode } = state.setup;
-    setState({ game: { names: displayNames(names), startIdx, mode, hands: [] } });
+    setState({
+      game: { names: displayNames(names), startIdx, mode, hands: [], startedAt: Date.now() },
+    });
+  }
+
+  const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+  // Clearing the board files the game away rather than destroying it. Filing on the
+  // way out rather than on the last hand keeps one rule: whatever leaves the board is
+  // in Past games, and a finished game stays put until you are done looking at it.
+  function archived() {
+    const game = state.game;
+    if (!game || !game.hands.length) return state.archive;   // nothing was ever played
+    return [{ ...game, id: newId(), endedAt: Date.now() }, ...state.archive].slice(0, ARCHIVE_LIMIT);
   }
 
   function resetGame() {
+    const archive = archived();
     storage.clear();
-    setState({ game: null, sheet: null, draft: null, setup: blankSetup() });
+    setState({ game: null, archive, sheet: null, history: null, draft: null, setup: blankSetup() });
+  }
+
+  // Put an unfinished game back on the board. Whatever is on the board right now is
+  // filed by the same rule as New game, so resuming never quietly drops a game in play.
+  function resumeGame(entry) {
+    const displaced = Boolean(state.game && state.game.hands.length);
+    const { id, endedAt, ...game } = entry;   // it is live again, so it sheds its filing
+
+    setState({
+      game,
+      archive: archived().filter((filed) => filed.id !== id),
+      sheet: null,
+      history: null,
+      draft: null,
+    });
+
+    if (displaced) flash('Previous game filed away');
+  }
+
+  function deleteArchived(id) {
+    setState({
+      archive: state.archive.filter((entry) => entry.id !== id),
+      // The sheet was showing that game, so send it somewhere that still exists.
+      history: state.game ? { gameId: null } : null,
+    });
   }
 
   // Edits happen on a copy, so closing the sheet without saving changes nothing.
@@ -1139,8 +1250,8 @@ a { color: inherit; }
   const closeSheet = () => setState({ sheet: null, draft: null });
   const updateDraft = (changes) => setState({ draft: { ...state.draft, ...changes } });
 
-  const openHistory = () => setState({ history: true, sheet: null, draft: null });
-  const closeHistory = () => setState({ history: false });
+  const openHistory = (gameId = null) => setState({ history: { gameId }, sheet: null, draft: null });
+  const closeHistory = () => setState({ history: null });
 
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape') return;
@@ -1195,8 +1306,8 @@ a { color: inherit; }
 
   // The scorecard as plain text, built to stay readable in a chat app where
   // nothing is aligned and no monospace font is guaranteed.
-  function historyText() {
-    const { names, startIdx, hands, mode } = state.game;
+  function historyText(game) {
+    const { names, startIdx, hands, mode } = game;
     const perKingdom = MODES[mode].contracts.length;
     const totals = runningTotals(hands);
     const finished = hands.length === perKingdom * KINGDOMS;
@@ -1207,6 +1318,8 @@ a { color: inherit; }
     lines.push(finished
       ? `Final result — ${result.text}`
       : `After ${hands.length} hand${hands.length === 1 ? '' : 's'}`);
+    const played = shortDate(game.startedAt || game.endedAt);
+    if (played) lines.push(played);
     lines.push('');
 
     result.ranked.forEach(({ player, points, place }) => {
@@ -1245,21 +1358,21 @@ a { color: inherit; }
     });
   }
 
-  async function copyHistory() {
+  async function copyHistory(game) {
     try {
-      await copyText(historyText());
+      await copyText(historyText(game));
       flash('Copied to clipboard');
     } catch {
       flash("Couldn't copy");
     }
   }
 
-  async function shareHistory() {
+  async function shareHistory(game) {
     try {
-      await navigator.share({ title: 'Trix scorecard', text: historyText() });
+      await navigator.share({ title: 'Trix scorecard', text: historyText(game) });
     } catch (err) {
       // Dismissing the share sheet is not a failure worth reporting.
-      if (!err || err.name !== 'AbortError') copyHistory();
+      if (!err || err.name !== 'AbortError') copyHistory(game);
     }
   }
 
@@ -1313,6 +1426,46 @@ a { color: inherit; }
       )),
 
       el('button', { class: 'primary', disabled: startIdx == null, onClick: startGame }, 'Start game'),
+
+      PastGames(),
+    ];
+  }
+
+  /* ========================================================================
+     Past games
+     ====================================================================== */
+
+  // The archive, newest first. It sits on the setup screen and at the foot of every
+  // scorecard, so an old game is reachable whether or not one is in progress.
+  function PastGames(viewing) {
+    if (!state.archive.length) return null;
+
+    return [
+      el('p', { class: 'label' }, 'Past games'),
+      el('div', { class: 'stack' }, state.archive.map((game) => {
+        const totals = runningTotals(game.hands);
+        const result = outcomeOf(game.names, totals);
+        const played = game.hands.length;
+        const total = MODES[game.mode].contracts.length * KINGDOMS;
+        const done = played === total;
+
+        return el('button', {
+          class: classes('past', viewing === game.id && 'on'),
+          onClick: () => openHistory(game.id),
+        },
+          el('span', { class: 'past-line' },
+            el('span', { class: 'past-who' },
+              done ? result.text : `${result.who} lead${result.tied ? '' : 's'}`),
+            el('span', { class: classes('past-score', result.points < 0 && 'down') },
+              signed(result.points)),
+          ),
+          el('span', { class: 'past-meta' }, [
+            shortDate(game.startedAt || game.endedAt),
+            done ? MODES[game.mode].label : `${played} of ${total} hands`,
+            joinNames(game.names),
+          ].filter(Boolean).join(' · ')),
+        );
+      })),
     ];
   }
 
@@ -1536,11 +1689,25 @@ a { color: inherit; }
      ====================================================================== */
 
   function HistorySheet() {
-    const { names, startIdx, hands, mode } = state.game;
+    const { gameId } = state.history;
+    const past = gameId ? state.archive.find((entry) => entry.id === gameId) : null;
+    const game = past || state.game;
+    if (!game) return null;   // the game was deleted out from under the sheet
+
+    const { names, startIdx, hands, mode } = game;
     const perKingdom = MODES[mode].contracts.length;
     const totals = runningTotals(hands);
     const finished = hands.length === perKingdom * KINGDOMS;
     const result = outcomeOf(names, totals);
+    const armed = past && state.confirmDelete === past.id;
+    const resumable = past && !finished;
+
+    const subtitle = [
+      past && shortDate(past.startedAt || past.endedAt),
+      finished
+        ? `Final result · ${result.text}`
+        : `${hands.length} hand${hands.length === 1 ? '' : 's'} played`,
+    ].filter(Boolean).join(' · ');
 
     return el('div', { class: 'sheet-wrap', onClick: closeHistory },
       el('div', { class: 'sheet', onClick: (e) => e.stopPropagation() },
@@ -1549,16 +1716,17 @@ a { color: inherit; }
 
           el('header', { class: 'sheet-head' },
             el('div', null,
-              el('h2', null, 'Scorecard'),
-              el('p', { class: 'sheet-sub' }, finished
-                ? `Final result · ${result.text}`
-                : `${hands.length} hand${hands.length === 1 ? '' : 's'} played`),
+              el('h2', null, past ? 'Past game' : 'Scorecard'),
+              el('p', { class: 'sheet-sub' }, subtitle),
             ),
             el('button', { class: 'ghost', onClick: closeHistory }, 'Close'),
           ),
         ),
 
         el('div', { class: 'sheet-body' },
+          past && state.game &&
+            el('button', { class: 'toggle back', onClick: () => openHistory() }, '← Back to this game'),
+
           el('p', { class: 'label first' }, finished ? 'Final standings' : 'Standings so far'),
           el('div', { class: 'ranks' }, result.ranked.map(({ player, points, place }) =>
             el('div', {
@@ -1572,13 +1740,23 @@ a { color: inherit; }
 
           el('p', { class: 'label' }, 'Every hand'),
           Ledger({ names, startIdx, hands, perKingdom, totals }),
+
+          PastGames(past ? past.id : null),
         ),
 
         el('footer', { class: 'sheet-foot' },
+          past && el('div', { class: 'sheet-actions' },
+            el('button', {
+              class: classes('danger', !resumable && 'wide', armed && 'armed'),
+              onClick: () => (armed ? deleteArchived(past.id) : setState({ confirmDelete: past.id })),
+            }, armed ? 'Delete for good?' : resumable ? 'Delete' : 'Delete this game'),
+            resumable &&
+              el('button', { class: 'primary', onClick: () => resumeGame(past) }, 'Resume this game'),
+          ),
           el('div', { class: 'sheet-actions' },
             navigator.share &&
-              el('button', { class: 'secondary', onClick: shareHistory }, 'Share'),
-            el('button', { class: 'primary', onClick: copyHistory }, 'Copy scorecard'),
+              el('button', { class: 'secondary', onClick: () => shareHistory(game) }, 'Share'),
+            el('button', { class: 'primary', onClick: () => copyHistory(game) }, 'Copy scorecard'),
           ),
         ),
       ),
