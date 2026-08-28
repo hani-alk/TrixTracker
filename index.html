@@ -817,12 +817,18 @@ a { color: inherit; }
   const STORAGE_KEY = 'trix:game:v2';
   const ARCHIVE_KEY = 'trix:archive:v1';
   const ARCHIVE_LIMIT = 20;      // enough to cover a season; the oldest falls off the end
+  const PAST_SHOWN = 5;          // the rest of the archive is one tap away
+
+  const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const storage = {
     load() {
       try {
-        const raw = localStorage.getItem(STORAGE_KEY);
-        return raw ? JSON.parse(raw) : null;
+        const game = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        if (!game) return null;
+        // A game saved before the archive existed has no id. Give it one so that it
+        // can be filed like any other rather than sitting outside history forever.
+        return game.id ? game : { ...game, id: newId() };
       } catch {
         return null;
       }
@@ -1067,6 +1073,10 @@ a { color: inherit; }
   const classes = (...names) => names.filter(Boolean).join(' ');
   const signed = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n);
 
+  // When a game was played. `endedAt` is what the first version of the archive
+  // wrote, so keep reading it.
+  const gameDate = (game) => game.startedAt || game.playedAt || game.endedAt;
+
   // "28 Aug" for a game from this year, "28 Aug 2025" for anything older.
   function shortDate(stamp) {
     if (!stamp) return '';
@@ -1094,6 +1104,7 @@ a { color: inherit; }
     toast: null,                     // transient confirmation message
     confirmReset: false,             // true once "New game" has been armed but not confirmed
     confirmDelete: null,             // id of the past game whose delete has been armed
+    showAllPast: false,              // true once the past games list has been expanded
   };
 
   // A half-pressed destructive button must never lie in wait for the next tap, so
@@ -1173,23 +1184,29 @@ a { color: inherit; }
   function startGame() {
     const { names, startIdx, mode } = state.setup;
     setState({
-      game: { names: displayNames(names), startIdx, mode, hands: [], startedAt: Date.now() },
+      game: {
+        id: newId(),
+        names: displayNames(names),
+        startIdx,
+        mode,
+        hands: [],
+        startedAt: Date.now(),
+      },
     });
   }
 
-  const newId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-
-  // Clearing the board files the game away rather than destroying it. Filing on the
-  // way out rather than on the last hand keeps one rule: whatever leaves the board is
-  // in Past games, and a finished game stays put until you are done looking at it.
-  function archived() {
-    const game = state.game;
-    if (!game || !game.hands.length) return state.archive;   // nothing was ever played
-    return [{ ...game, id: newId(), endedAt: Date.now() }, ...state.archive].slice(0, ARCHIVE_LIMIT);
+  // History mirrors every game that has had a hand played — the one on the board
+  // included — so it is never waiting on you to clear the board before a game shows
+  // up in it. Filing is an upsert on the game's id, so a game can be filed after every
+  // single hand and still never appear twice. Undo back to nothing un-files it again.
+  function fileGame(game, archive) {
+    const rest = archive.filter((filed) => !game || filed.id !== game.id);
+    if (!game || !game.hands.length) return rest;
+    return [{ ...game, playedAt: Date.now() }, ...rest].slice(0, ARCHIVE_LIMIT);
   }
 
   function resetGame() {
-    const archive = archived();
+    const archive = fileGame(state.game, state.archive);
     storage.clear();
     setState({ game: null, archive, sheet: null, history: null, draft: null, setup: blankSetup() });
   }
@@ -1198,17 +1215,18 @@ a { color: inherit; }
   // filed by the same rule as New game, so resuming never quietly drops a game in play.
   function resumeGame(entry) {
     const displaced = Boolean(state.game && state.game.hands.length);
-    const { id, endedAt, ...game } = entry;   // it is live again, so it sheds its filing
 
     setState({
-      game,
-      archive: archived().filter((filed) => filed.id !== id),
+      game: { ...entry },
+      // The game coming off the board is filed on its way out; the one going on is
+      // already on file, and drops out of the list because it is live again.
+      archive: fileGame(state.game, state.archive),
       sheet: null,
       history: null,
       draft: null,
     });
 
-    if (displaced) flash('Previous game filed away');
+    if (displaced) flash('Previous game saved');
   }
 
   function deleteArchived(id) {
@@ -1237,14 +1255,16 @@ a { color: inherit; }
     const hand = { contract, data: state.draft };
     if (index == null) hands.push(hand);
     else hands[index] = hand;
-    setState({ game: { ...state.game, hands }, sheet: null, draft: null });
+    const game = { ...state.game, hands };
+    setState({ game, archive: fileGame(game, state.archive), sheet: null, draft: null });
     // The point of saving is to see what it did to the totals, which live at the top.
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function deleteHand(index) {
     const hands = state.game.hands.filter((_, i) => i !== index);
-    setState({ game: { ...state.game, hands }, sheet: null, draft: null });
+    const game = { ...state.game, hands };
+    setState({ game, archive: fileGame(game, state.archive), sheet: null, draft: null });
   }
 
   const closeSheet = () => setState({ sheet: null, draft: null });
@@ -1318,7 +1338,7 @@ a { color: inherit; }
     lines.push(finished
       ? `Final result — ${result.text}`
       : `After ${hands.length} hand${hands.length === 1 ? '' : 's'}`);
-    const played = shortDate(game.startedAt || game.endedAt);
+    const played = shortDate(gameDate(game));
     if (played) lines.push(played);
     lines.push('');
 
@@ -1435,14 +1455,19 @@ a { color: inherit; }
      Past games
      ====================================================================== */
 
-  // The archive, newest first. It sits on the setup screen and at the foot of every
-  // scorecard, so an old game is reachable whether or not one is in progress.
+  // Every game that has had a hand played, most recent first, less the one on the
+  // board — that one you are already looking at. Shown on the setup screen, at the
+  // foot of the board and at the foot of every scorecard, so an old game is never
+  // more than a scroll away from wherever you happen to be.
   function PastGames(viewing) {
-    if (!state.archive.length) return null;
+    const list = state.archive.filter((game) => !state.game || game.id !== state.game.id);
+    if (!list.length) return null;
+
+    const shown = state.showAllPast ? list : list.slice(0, PAST_SHOWN);
 
     return [
       el('p', { class: 'label' }, 'Past games'),
-      el('div', { class: 'stack' }, state.archive.map((game) => {
+      el('div', { class: 'stack' }, shown.map((game) => {
         const totals = runningTotals(game.hands);
         const result = outcomeOf(game.names, totals);
         const played = game.hands.length;
@@ -1460,12 +1485,17 @@ a { color: inherit; }
               signed(result.points)),
           ),
           el('span', { class: 'past-meta' }, [
-            shortDate(game.startedAt || game.endedAt),
+            shortDate(gameDate(game)),
             done ? MODES[game.mode].label : `${played} of ${total} hands`,
             joinNames(game.names),
           ].filter(Boolean).join(' · ')),
         );
       })),
+
+      list.length > PAST_SHOWN && el('button', {
+        class: 'toggle',
+        onClick: () => setState({ showAllPast: !state.showAllPast }),
+      }, state.showAllPast ? 'Show fewer' : `Show all ${list.length}`),
     ];
   }
 
@@ -1597,6 +1627,8 @@ a { color: inherit; }
           ),
         )),
       ),
+
+      PastGames(),
     ];
   }
 
@@ -1703,7 +1735,7 @@ a { color: inherit; }
     const resumable = past && !finished;
 
     const subtitle = [
-      past && shortDate(past.startedAt || past.endedAt),
+      past && shortDate(gameDate(past)),
       finished
         ? `Final result · ${result.text}`
         : `${hands.length} hand${hands.length === 1 ? '' : 's'} played`,
