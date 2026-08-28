@@ -50,7 +50,17 @@ html, body {
   background: var(--ink);
   overscroll-behavior: none;
 }
+html { scrollbar-gutter: stable; }
 body { -webkit-text-size-adjust: 100%; }
+/* Pins the page while a sheet is open. `position: fixed` is the only lock iOS
+   honours; the script remembers the offset and hands it back on close. */
+body.locked {
+  position: fixed;
+  left: 0;
+  right: 0;
+  width: 100%;
+  overflow: hidden;
+}
 * { box-sizing: border-box; }
 
 .app {
@@ -58,9 +68,13 @@ body { -webkit-text-size-adjust: 100%; }
   background: var(--ink);
   color: var(--cream);
   min-height: 100vh;
+  min-height: 100dvh;
   max-width: 520px;
   margin: 0 auto;
-  padding: 18px 16px 40px;
+  /* viewport-fit=cover puts the page under the status bar and the home indicator,
+     so every edge has to buy its way back out of the inset. */
+  padding: calc(18px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+           calc(40px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   -webkit-tap-highlight-color: transparent;
 }
 /* Wrapped in :where() so this reset carries no specificity — otherwise `.app button`
@@ -177,6 +191,7 @@ a { color: inherit; }
   letter-spacing: 0.08em;
   color: var(--dim);
 }
+.ghost.armed { background: var(--red-wash); border-color: var(--red); color: var(--red); }
 
 .toggle {
   width: 100%;
@@ -236,12 +251,30 @@ a { color: inherit; }
 .row.winner { background: var(--wash); box-shadow: inset 3px 0 0 var(--cream); }
 .place-badge {
   flex: none;
-  width: 26px;
+  width: 30px;
   font-family: var(--mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--faint);
 }
 .place-badge.lead { color: var(--cream); }
+/* Once the game is over the placing carries the whole answer to "who won", so it
+   stops being a whisper in the margin and becomes a numbered chip. */
+.row.final .place-badge {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--dim);
+}
+.row.winner .place-badge { background: var(--cream); border-color: var(--cream); color: var(--ink); }
+.row.winner .name { font-size: 17px; font-weight: 800; }
+.row.winner .total { color: var(--cream); }
+.row.winner .total.down { color: var(--red); }
 .who { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .name {
   font-size: 16px;
@@ -283,6 +316,43 @@ a { color: inherit; }
   color: var(--red);
   font-size: 13px;
 }
+
+/* ==========================================================================
+   Board — the final result
+   ========================================================================== */
+.result {
+  margin-top: 18px;
+  padding: 22px 18px 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--wash);
+  text-align: center;
+}
+.result-label {
+  color: var(--red);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+.result-name {
+  margin-top: 8px;
+  font-size: 34px;
+  line-height: 1.02;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+}
+.result-score {
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--dim);
+}
+.result .primary { margin-top: 18px; }
 
 /* ==========================================================================
    Board — contract tiles and the kingdom grid
@@ -343,42 +413,66 @@ a { color: inherit; }
 /* ==========================================================================
    Hand sheet
    ========================================================================== */
+/* The wrap is pinned to the *dynamic* viewport so the sheet can never grow taller
+   than what the phone is actually showing. `vh` measures the tall viewport with the
+   URL bar hidden, which used to push the header — and its close button — off the top
+   of the screen with no way to scroll back to it. */
 .sheet-wrap {
   position: fixed;
   inset: 0;
+  height: 100vh;
+  height: 100dvh;
   background: rgba(8, 8, 8, 0.78);
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  padding-top: calc(12px + env(safe-area-inset-top));
+  overscroll-behavior: contain;
   z-index: 50;
 }
 .sheet {
   width: 100%;
   max-width: 520px;
-  max-height: 94vh;
+  max-height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   background: var(--ink);
   border: 1px solid var(--line-strong);
   border-bottom: none;
   border-radius: var(--radius) var(--radius) 0 0;
-  padding: 8px 16px calc(16px + env(safe-area-inset-bottom));
+  padding: 0 max(16px, env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom))
+           max(16px, env(safe-area-inset-left));
   animation: rise 0.22s ease-out;
 }
 @keyframes rise { from { transform: translateY(24px); } }
-.handle { width: 38px; height: 3px; background: var(--line-strong); margin: 0 auto 12px; }
+/* Handle and header together are the drag-to-dismiss target, so the browser must
+   not claim the vertical gesture for scrolling first. */
+.sheet-grab { flex: none; padding-top: 8px; touch-action: none; }
+.handle { width: 38px; height: 4px; border-radius: 2px; background: var(--line-strong); margin: 0 auto 12px; }
 .sheet-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  gap: 12px;
   padding-bottom: 14px;
   border-bottom: 1px solid var(--line);
 }
+.sheet-head .ghost { flex: none; }
 .sheet-head h2 { font-size: 20px; display: flex; align-items: center; gap: 8px; text-transform: uppercase; }
 .sheet-glyph { font-size: 22px; }
 .sheet-head h2.red .sheet-glyph { color: var(--red); }
-.sheet-body { flex: 1; overflow-y: auto; padding: 16px 0; }
-.sheet-foot { border-top: 1px solid var(--line); padding-top: 12px; }
+.sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 0;
+}
+.sheet-foot { flex: none; border-top: 1px solid var(--line); padding-top: 12px; }
+.needed { font-size: 12px; color: var(--dim); text-align: center; margin-bottom: 10px; }
+.needed b { color: var(--cream); font-weight: 600; }
 
 .block {
   background: var(--surface);
@@ -452,8 +546,32 @@ a { color: inherit; }
 }
 .rank.on { opacity: 1; border-color: var(--line-strong); }
 .rank.lead { border-color: var(--cream); background: var(--wash); }
-.place { font-family: var(--mono); font-size: 12px; color: var(--dim); width: 28px; }
-.rank-name { flex: 1; font-size: 14px; font-weight: 600; }
+.place { flex: none; width: 28px; font-family: var(--mono); font-size: 12px; color: var(--dim); }
+.rank-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The finished standings are the scorecard's headline — first place gets the weight. */
+.rank.champion { padding: 14px 12px; }
+.rank.champion .place {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--cream);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 700;
+}
+.rank.champion .rank-name { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
+.rank.champion .points { font-size: 15px; font-weight: 700; color: var(--cream); }
+.rank.champion .points.down { color: var(--red); }
 .points { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
 .points.down { color: var(--red); }
 
@@ -736,6 +854,22 @@ a { color: inherit; }
     }
   }
 
+  // What is still stopping a hand from saving, named in the order the blocks appear.
+  function missingParts(data) {
+    const parts = [];
+    if (data.tricks && sum(data.tricks) !== TRICKS_PER_HAND) parts.push('tricks');
+    if (data.king && !takerSettled(data.king)) parts.push('K♥');
+    if (data.queens) {
+      data.queens.forEach((queen) => { if (!takerSettled(queen)) parts.push(`Q${queen.suit}`); });
+    }
+    if (data.diamonds && sum(data.diamonds) !== TRICKS_PER_HAND) parts.push('diamonds');
+    if (data.order && data.order.length !== PLAYERS) {
+      const left = PLAYERS - data.order.length;
+      parts.push(`${left} more player${left === 1 ? '' : 's'} to go out`);
+    }
+    return parts;
+  }
+
   /* ========================================================================
      Scoring
      ====================================================================== */
@@ -806,6 +940,21 @@ a { color: inherit; }
   // "Ann", "Ann & Bo", "Ann, Bo & Cy"
   const joinNames = (list) =>
     list.length < 2 ? (list[0] || '') : `${list.slice(0, -1).join(', ')} & ${list[list.length - 1]}`;
+
+  // Who is on top — worked out once so the board, the scorecard and the shared
+  // text can never disagree about who won.
+  function outcomeOf(names, totals) {
+    const ranked = standings(totals);
+    const leaders = ranked.filter((entry) => entry.place === 1);
+    const who = joinNames(leaders.map((entry) => names[entry.player]));
+    return {
+      ranked,
+      who,
+      tied: leaders.length > 1,
+      points: leaders.length ? leaders[0].points : 0,
+      text: leaders.length > 1 ? `${who} tie` : `${who} wins`,
+    };
+  }
 
   // In a Complex hand every penalty card lives inside a trick someone took, so a
   // player holding more penalties than their tricks could hold means a miscount.
@@ -878,9 +1027,13 @@ a { color: inherit; }
     setup: blankSetup(),         // the setup form, discarded once a game starts
     draft: null,                 // the hand being edited in the sheet
     toast: null,                 // transient confirmation message
+    confirmReset: false,         // true once "New game" has been armed but not confirmed
   };
 
   function setState(changes) {
+    // Anything other than arming it disarms the "New game" confirmation, so a
+    // half-pressed reset never lies in wait for the next tap.
+    if (!('confirmReset' in changes)) changes = { ...changes, confirmReset: false };
     Object.assign(state, changes);
     if (state.game) storage.save(state.game);
     render();
@@ -889,11 +1042,31 @@ a { color: inherit; }
   // The whole screen is cheap enough to rebuild on every change, but throwing the DOM
   // away also throws away the things the browser was holding for us: the caret in a
   // text field, and how far the page and the open sheet were scrolled. Carry them over.
+  // A sheet covers the screen, so the page behind it must not move underneath it —
+  // that drift is what makes a sheet feel unmoored on a phone. `position: fixed` is
+  // the only lock iOS honours, and it forgets where you were, so remember it here.
+  let lockedAt = 0;
+  let scrollLocked = false;
+
+  function setScrollLock(next) {
+    if (next === scrollLocked) return;
+    scrollLocked = next;
+    if (next) {
+      lockedAt = window.scrollY;
+      document.body.style.top = `-${lockedAt}px`;
+      document.body.classList.add('locked');
+    } else {
+      document.body.classList.remove('locked');
+      document.body.style.top = '';
+      window.scrollTo(0, lockedAt);
+    }
+  }
+
   function render() {
     const active = document.activeElement;
     const focusKey = active && active.dataset ? active.dataset.focusKey : null;
     const caret = focusKey && 'selectionStart' in active ? active.selectionStart : null;
-    const pageScroll = window.scrollY;
+    const pageScroll = scrollLocked ? lockedAt : window.scrollY;
     const sheetBody = root.querySelector('.sheet-body');
     const sheetScroll = sheetBody ? sheetBody.scrollTop : 0;
 
@@ -906,7 +1079,9 @@ a { color: inherit; }
       state.toast ? el('p', { class: 'toast' }, state.toast) : null,
     ));
 
-    window.scrollTo(0, pageScroll);
+    setScrollLock(Boolean(state.sheet || state.history));
+    if (!scrollLocked) window.scrollTo(0, pageScroll);
+
     const nextSheetBody = root.querySelector('.sheet-body');
     if (nextSheetBody) nextSheetBody.scrollTop = sheetScroll;
 
@@ -952,6 +1127,8 @@ a { color: inherit; }
     if (index == null) hands.push(hand);
     else hands[index] = hand;
     setState({ game: { ...state.game, hands }, sheet: null, draft: null });
+    // The point of saving is to see what it did to the totals, which live at the top.
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function deleteHand(index) {
@@ -964,6 +1141,43 @@ a { color: inherit; }
 
   const openHistory = () => setState({ history: true, sheet: null, draft: null });
   const closeHistory = () => setState({ history: false });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (state.sheet) closeSheet();
+    else if (state.history) closeHistory();
+  });
+
+  // Drag the sheet's header downwards to dismiss it — the gesture every other bottom
+  // sheet on a phone already answers to, so the Close button is never the only way out.
+  function grabToDismiss(close) {
+    return (event) => {
+      if (event.pointerType === 'mouse') return;
+      const sheet = event.currentTarget.closest('.sheet');
+      if (!sheet) return;
+
+      const startY = event.clientY;
+      let offset = 0;
+
+      const move = (e) => {
+        offset = Math.max(0, e.clientY - startY);
+        sheet.style.transition = 'none';
+        sheet.style.transform = `translateY(${offset}px)`;
+      };
+      const end = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', end);
+        window.removeEventListener('pointercancel', end);
+        if (offset > 80) { close(); return; }
+        sheet.style.transition = 'transform 0.18s ease-out';
+        sheet.style.transform = '';
+      };
+
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', end);
+      window.addEventListener('pointercancel', end);
+    };
+  }
 
   const displayNames = (names) => names.map((n, i) => n.trim() || `Player ${i + 1}`);
 
@@ -987,13 +1201,15 @@ a { color: inherit; }
     const totals = runningTotals(hands);
     const finished = hands.length === perKingdom * KINGDOMS;
 
+    const result = outcomeOf(names, totals);
+
     const lines = [`TRIX · ${MODES[mode].label}`];
     lines.push(finished
-      ? 'Final result'
+      ? `Final result — ${result.text}`
       : `After ${hands.length} hand${hands.length === 1 ? '' : 's'}`);
     lines.push('');
 
-    standings(totals).forEach(({ player, points, place }) => {
+    result.ranked.forEach(({ player, points, place }) => {
       lines.push(`${PLACES[place - 1]}  ${names[player]}  ${signed(points)}`);
     });
 
@@ -1120,11 +1336,13 @@ a { color: inherit; }
     const remaining = contracts.filter((c) => !playedThisKingdom.includes(c));
 
     // Standings so far — shown from the first hand on, not just at the end.
-    const ranked = standings(totals);
+    const result = outcomeOf(names, totals);
     const placeOf = zeroes();
-    ranked.forEach(({ player, place }) => { placeOf[player] = place; });
-    const leaders = ranked.filter((r) => r.place === 1).map((r) => names[r.player]);
-    const outcome = leaders.length === 1 ? `${leaders[0]} wins` : `${joinNames(leaders)} tie`;
+    result.ranked.forEach(({ player, place }) => { placeOf[player] = place; });
+
+    // Mid-game the list stays in seating order, because that is what tells you whose
+    // kingdom comes next. Once it is over seating no longer matters and rank does.
+    const seats = finished ? result.ranked.map((entry) => entry.player) : names.map((_, i) => i);
 
     // Hands only net to zero across a full kingdom (−500 of losing games, +500 of Trix),
     // so the running total is measured against what the hands played so far should net —
@@ -1137,22 +1355,35 @@ a { color: inherit; }
         el('div', null,
           el('h1', null, 'Trix'),
           el('p', { class: 'eyebrow' },
-            finished ? outcome : `Kingdom ${kingdom + 1} of ${KINGDOMS} · ${names[dealer]}`),
+            finished ? 'Game over' : `Kingdom ${kingdom + 1} of ${KINGDOMS} · ${names[dealer]}`),
         ),
         el('div', { class: 'tools' },
           hands.length > 0 &&
             el('button', { class: 'ghost', onClick: () => deleteHand(hands.length - 1) }, 'Undo'),
-          el('button', { class: 'ghost', onClick: resetGame }, 'New game'),
+          // Throwing a whole game away deserves a second tap, not a stray one.
+          el('button', {
+            class: classes('ghost', state.confirmReset && 'armed'),
+            onClick: () => (state.confirmReset ? resetGame() : setState({ confirmReset: true })),
+          }, state.confirmReset ? 'Sure?' : 'New game'),
         ),
       ),
 
-      el('section', { class: 'scores' }, names.map((name, i) =>
-        el('div', { class: classes('row', finished && placeOf[i] === 1 && 'winner') },
+      finished && el('section', { class: 'result' },
+        el('p', { class: 'result-label' }, result.tied ? 'Tied' : 'Winner'),
+        el('h2', { class: 'result-name' }, result.who),
+        el('p', { class: 'result-score' }, `${signed(result.points)} points`),
+        el('button', { class: 'primary', onClick: openHistory }, 'Full scorecard'),
+      ),
+
+      el('section', { class: 'scores' }, seats.map((i) =>
+        el('div', {
+          class: classes('row', finished && 'final', finished && placeOf[i] === 1 && 'winner'),
+        },
           hands.length > 0 &&
             el('span', { class: classes('place-badge', placeOf[i] === 1 && 'lead') },
               PLACES[placeOf[i] - 1]),
           el('div', { class: 'who' },
-            el('span', { class: 'name' }, name),
+            el('span', { class: 'name' }, names[i]),
             !finished && i === dealer && el('span', { class: 'tag' }, 'kingdom'),
           ),
           lastHand && lastHand[i] !== 0 &&
@@ -1227,6 +1458,7 @@ a { color: inherit; }
     const { names } = state.game;
 
     const complete = handIsComplete(key, data);
+    const missing = complete ? [] : missingParts(data);
     const preview = complete ? scoreHand({ contract: key, data }) : null;
     const conflicts = key === 'complex' ? complexConflicts(data, names) : [];
 
@@ -1259,15 +1491,17 @@ a { color: inherit; }
 
     return el('div', { class: 'sheet-wrap', onClick: closeSheet },
       el('div', { class: 'sheet', onClick: (e) => e.stopPropagation() },
-        el('div', { class: 'handle' }),
+        el('div', { class: 'sheet-grab', onPointerdown: grabToDismiss(closeSheet) },
+          el('div', { class: 'handle' }),
 
-        el('header', { class: 'sheet-head' },
-          el('div', null,
-            el('h2', { class: contract.red ? 'red' : '' },
-              el('span', { class: 'sheet-glyph' }, contract.glyph), ' ', contract.name),
-            el('p', { class: 'ar' }, contract.ar),
+          el('header', { class: 'sheet-head' },
+            el('div', null,
+              el('h2', { class: contract.red ? 'red' : '' },
+                el('span', { class: 'sheet-glyph' }, contract.glyph), ' ', contract.name),
+              el('p', { class: 'ar' }, contract.ar),
+            ),
+            el('button', { class: 'ghost', onClick: closeSheet }, 'Close'),
           ),
-          el('button', { class: 'ghost', onClick: closeSheet }, 'Close'),
         ),
 
         el('div', { class: 'sheet-body' },
@@ -1285,6 +1519,8 @@ a { color: inherit; }
               }, signed(preview[i])),
             ),
           )),
+          missing.length > 0 &&
+            el('p', { class: 'needed' }, 'Still needed: ', el('b', null, joinNames(missing))),
           el('div', { class: 'sheet-actions' },
             index != null && el('button', { class: 'danger', onClick: () => deleteHand(index) }, 'Delete'),
             el('button', { class: 'primary', disabled: !complete, onClick: saveHand },
@@ -1304,25 +1540,30 @@ a { color: inherit; }
     const perKingdom = MODES[mode].contracts.length;
     const totals = runningTotals(hands);
     const finished = hands.length === perKingdom * KINGDOMS;
+    const result = outcomeOf(names, totals);
 
     return el('div', { class: 'sheet-wrap', onClick: closeHistory },
       el('div', { class: 'sheet', onClick: (e) => e.stopPropagation() },
-        el('div', { class: 'handle' }),
+        el('div', { class: 'sheet-grab', onPointerdown: grabToDismiss(closeHistory) },
+          el('div', { class: 'handle' }),
 
-        el('header', { class: 'sheet-head' },
-          el('div', null,
-            el('h2', null, 'Scorecard'),
-            el('p', { class: 'sheet-sub' }, finished
-              ? 'Final result'
-              : `${hands.length} hand${hands.length === 1 ? '' : 's'} played`),
+          el('header', { class: 'sheet-head' },
+            el('div', null,
+              el('h2', null, 'Scorecard'),
+              el('p', { class: 'sheet-sub' }, finished
+                ? `Final result · ${result.text}`
+                : `${hands.length} hand${hands.length === 1 ? '' : 's'} played`),
+            ),
+            el('button', { class: 'ghost', onClick: closeHistory }, 'Close'),
           ),
-          el('button', { class: 'ghost', onClick: closeHistory }, 'Close'),
         ),
 
         el('div', { class: 'sheet-body' },
           el('p', { class: 'label first' }, finished ? 'Final standings' : 'Standings so far'),
-          el('div', { class: 'ranks' }, standings(totals).map(({ player, points, place }) =>
-            el('div', { class: classes('rank', 'on', place === 1 && 'lead') },
+          el('div', { class: 'ranks' }, result.ranked.map(({ player, points, place }) =>
+            el('div', {
+              class: classes('rank', 'on', place === 1 && 'lead', finished && place === 1 && 'champion'),
+            },
               el('span', { class: 'place' }, PLACES[place - 1]),
               el('span', { class: 'rank-name' }, names[player]),
               el('span', { class: classes('points', points < 0 && 'down') }, signed(points)),
