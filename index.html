@@ -608,21 +608,22 @@ a { color: inherit; }
 .fit-inner {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
   padding: 16px 0;
-  transform-origin: top center;
+  transform-origin: top left;
 }
-.ledger.final th, .ledger.final td { padding: 3px; }
-.ledger.final .ledger-kingdom td { padding: 8px 0 2px; }
+.ledger.final th, .ledger.final td { padding: 6px 3px; }
+.ledger.final .ledger-kingdom td { padding: 16px 0 5px; }
+.ledger.final tfoot th, .ledger.final tfoot td { padding-top: 11px; }
 
 .podium { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .podium-seat {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   min-width: 0;
-  padding: 9px 3px;
+  padding: 12px 4px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -644,7 +645,8 @@ a { color: inherit; }
 .podium-name {
   max-width: 100%;
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
+  color: var(--dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -654,8 +656,13 @@ a { color: inherit; }
   font-variant-numeric: tabular-nums;
   font-size: 14px;
   font-weight: 700;
+  color: var(--dim);
 }
-.podium-score.down { color: var(--red); }
+/* First place carries the result, so it is the one thing in the card that is loud. */
+.podium-seat.lead .podium-name { font-size: 14px; font-weight: 800; color: var(--cream); }
+.podium-seat.lead .podium-score { font-size: 18px; color: var(--cream); }
+.podium-score.down,
+.podium-seat.lead .podium-score.down { color: var(--red); }
 
 .conflict {
   margin-top: 12px;
@@ -726,12 +733,14 @@ a { color: inherit; }
   overflow-wrap: anywhere;
   border-bottom: 1px solid var(--line);
 }
+/* Only the column's head and its total are tinted: banding the body as well broke the
+   tint across every kingdom heading and read as stripes rather than as one column. */
 .ledger .lead { background: var(--wash); }
 .ledger-contract, .ledger thead td, .ledger tfoot th { width: 32%; text-align: left; }
 .ledger-contract {
   font-size: 12px;
   font-weight: 600;
-  color: var(--cream);
+  color: var(--dim);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -744,6 +753,11 @@ a { color: inherit; }
 }
 .ledger-value.up { color: var(--cream); }
 .ledger-value.down { color: var(--red); }
+/* Most cells in a finished card are zeros. They have to be there for the columns to
+   add up, but they carry nothing, so they recede almost to the paper and let the
+   scores that did happen carry the table. */
+.ledger-value.zero { color: rgba(234, 221, 202, 0.15); }
+.ledger tbody .ledger-kingdom:not(:first-child) td { border-top: 1px solid var(--line); }
 .ledger-kingdom td {
   padding: 11px 0 3px;
   text-align: left;
@@ -761,7 +775,8 @@ a { color: inherit; }
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }
-.ledger tfoot .ledger-value { font-size: 14px; font-weight: 700; color: var(--cream); }
+.ledger tfoot th, .ledger tfoot td { padding-top: 9px; }
+.ledger tfoot .ledger-value { font-size: 15px; font-weight: 700; color: var(--cream); }
 .ledger tfoot .ledger-value.down { color: var(--red); }
 
 /* ==========================================================================
@@ -1166,7 +1181,7 @@ a { color: inherit; }
     render();
   }
 
-  const MIN_SCORECARD_SCALE = 0.8;
+  const MIN_SCORECARD_SCALE = 0.75;
 
   // Shrink a finished scorecard just enough that ranking and every hand land in one
   // screenshot. Only a little: past MIN_SCORECARD_SCALE an unreadable card is worse
@@ -1179,15 +1194,25 @@ a { color: inherit; }
 
     // Measure unscaled, or every pass would compound the last one's scale.
     inner.style.transform = 'none';
+    inner.style.width = '100%';
     frame.style.height = 'auto';
 
     const need = inner.getBoundingClientRect().height;
     const have = body.clientHeight;
     if (!need || !have || need <= have) return;
 
-    const scale = Math.max(MIN_SCORECARD_SCALE, have / need);
+    // Scaling shrinks the card's width along with its height, which would leave it
+    // visibly narrower than the sheet's own header and footer. Widening it by the same
+    // factor first lands it back at full width — and the extra room means rows wrap
+    // less, so it is measured again at that width before the scale is settled.
+    const widen = (k) => { inner.style.width = `${100 / k}%`; };
+    widen(Math.max(MIN_SCORECARD_SCALE, have / need));
+
+    const wide = inner.getBoundingClientRect().height;
+    const scale = Math.max(MIN_SCORECARD_SCALE, Math.min(1, have / wide));
+    widen(scale);
     inner.style.transform = `scale(${scale})`;
-    frame.style.height = `${Math.ceil(need * scale)}px`;
+    frame.style.height = `${Math.ceil(inner.getBoundingClientRect().height)}px`;
   }
 
   // The webfonts land after the first paint and change every row height with them,
@@ -1914,7 +1939,7 @@ a { color: inherit; }
         el('th', { class: 'ledger-contract', scope: 'row' }, CONTRACTS[hand.contract].name),
         seats.map((player) =>
           el('td', {
-            class: classes('ledger-value', lead(player),
+            class: classes('ledger-value', scores[player] === 0 && 'zero',
               scores[player] > 0 && 'up', scores[player] < 0 && 'down'),
           }, signed(scores[player]))),
       ));
