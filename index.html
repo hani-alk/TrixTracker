@@ -592,25 +592,70 @@ a { color: inherit; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The finished standings are the scorecard's headline — first place gets the weight. */
-.rank.champion { padding: 14px 12px; }
-.rank.champion .place {
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: var(--cream);
-  color: var(--ink);
-  font-size: 10px;
-  font-weight: 700;
-}
-.rank.champion .rank-name { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; }
-.rank.champion .points { font-size: 15px; font-weight: 700; color: var(--cream); }
-.rank.champion .points.down { color: var(--red); }
 .points { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
 .points.down { color: var(--red); }
+
+/* The finished ranking, laid across rather than down: four stacked rows cost about
+   215px before the ledger even starts, which is what pushed a finished game past one
+   screen. Across, it costs about 76px and lines up with the ledger column for column,
+   since that is ordered by rank too — so ranking and every hand fit one screenshot. */
+/* A finished scorecard is one artefact — the ranking and every hand, meant to be
+   caught in a single screenshot. It drops its section labels (the place chips and the
+   Total row say what these are), tightens its rows, and, if it is still a little
+   taller than the sheet, scales down instead of scrolling. See fitScorecard(). */
+.sheet-body.fitted { padding: 0; }
+.fit { overflow: hidden; }
+.fit-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 0;
+  transform-origin: top center;
+}
+.ledger.final th, .ledger.final td { padding: 3px; }
+.ledger.final .ledger-kingdom td { padding: 8px 0 2px; }
+
+.podium { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.podium-seat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 3px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+.podium-seat.lead { background: var(--wash); border-color: var(--cream); }
+.podium-place {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--dim);
+  padding: 2px 6px;
+}
+.podium-seat.lead .podium-place {
+  background: var(--cream);
+  color: var(--ink);
+  border-radius: 999px;
+}
+.podium-name {
+  max-width: 100%;
+  font-size: 12px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.podium-score {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 700;
+}
+.podium-score.down { color: var(--red); }
 
 .conflict {
   margin-top: 12px;
@@ -671,18 +716,17 @@ a { color: inherit; }
   table-layout: fixed;
   border-collapse: collapse;
 }
-.ledger th, .ledger td { padding: 7px 4px; text-align: right; }
+.ledger th, .ledger td { padding: 5px 3px; text-align: right; }
 .ledger thead th {
   font-size: 10px;
   font-weight: 700;
   color: var(--dim);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
   border-bottom: 1px solid var(--line);
 }
+.ledger .lead { background: var(--wash); }
 .ledger-contract, .ledger thead td, .ledger tfoot th { width: 32%; text-align: left; }
 .ledger-contract {
   font-size: 12px;
@@ -701,7 +745,7 @@ a { color: inherit; }
 .ledger-value.up { color: var(--cream); }
 .ledger-value.down { color: var(--red); }
 .ledger-kingdom td {
-  padding: 16px 0 4px;
+  padding: 11px 0 3px;
   text-align: left;
   font-size: 10px;
   font-weight: 700;
@@ -1122,6 +1166,35 @@ a { color: inherit; }
     render();
   }
 
+  const MIN_SCORECARD_SCALE = 0.8;
+
+  // Shrink a finished scorecard just enough that ranking and every hand land in one
+  // screenshot. Only a little: past MIN_SCORECARD_SCALE an unreadable card is worse
+  // than a scrolled one, so it is left to scroll from there.
+  function fitScorecard() {
+    const inner = root.querySelector('.fit-inner');
+    if (!inner) return;
+    const frame = inner.parentElement;
+    const body = frame.parentElement;
+
+    // Measure unscaled, or every pass would compound the last one's scale.
+    inner.style.transform = 'none';
+    frame.style.height = 'auto';
+
+    const need = inner.getBoundingClientRect().height;
+    const have = body.clientHeight;
+    if (!need || !have || need <= have) return;
+
+    const scale = Math.max(MIN_SCORECARD_SCALE, have / need);
+    inner.style.transform = `scale(${scale})`;
+    frame.style.height = `${Math.ceil(need * scale)}px`;
+  }
+
+  // The webfonts land after the first paint and change every row height with them,
+  // so the card is measured again once they are in.
+  if (document.fonts) document.fonts.ready.then(fitScorecard);
+  window.addEventListener('resize', fitScorecard);
+
   // The whole screen is cheap enough to rebuild on every change, but throwing the DOM
   // away also throws away the things the browser was holding for us: the caret in a
   // text field, and how far the page and the open sheet were scrolled. Carry them over.
@@ -1167,6 +1240,7 @@ a { color: inherit; }
 
     const nextSheetBody = root.querySelector('.sheet-body');
     if (nextSheetBody) nextSheetBody.scrollTop = sheetScroll;
+    fitScorecard();
 
     if (focusKey) {
       const next = root.querySelector(`[data-focus-key="${focusKey}"]`);
@@ -1456,10 +1530,13 @@ a { color: inherit; }
      ====================================================================== */
 
   // Every game that has had a hand played, most recent first, less the one on the
-  // board — that one you are already looking at. Shown on the setup screen, at the
-  // foot of the board and at the foot of every scorecard, so an old game is never
-  // more than a scroll away from wherever you happen to be.
-  function PastGames(viewing) {
+  // board — that one you are already looking at. Shown on the setup screen and at the
+  // foot of the board. Deliberately not in the scorecard sheet: that sheet has to read
+  // as one clean artefact when it is screenshotted.
+  function PastGames() {
+    // The scorecard sheet no longer carries this list, so the open game is marked
+    // here instead — on the screen the sheet was opened from.
+    const viewing = state.history && state.history.gameId;
     const list = state.archive.filter((game) => !state.game || game.id !== state.game.id);
     if (!list.length) return null;
 
@@ -1732,6 +1809,19 @@ a { color: inherit; }
     const finished = hands.length === perKingdom * KINGDOMS;
     const result = outcomeOf(names, totals);
     const armed = past && state.confirmDelete === past.id;
+
+    // Once the game is over the table is ordered by rank, so it reads top-to-bottom
+    // with the podium and the winner sits in the leftmost column.
+    const leader = zeroes();
+    result.ranked.forEach(({ player, place }) => { leader[player] = place === 1; });
+    const seats = finished ? result.ranked.map((entry) => entry.player) : names.map((_, i) => i);
+
+    // Only rendered when a past game is open while another is in play. It goes inside
+    // the scaled block on a finished card so it cannot be double-rendered.
+    const back = past && state.game && !finished &&
+      el('button', { class: 'toggle back', onClick: () => openHistory() }, '← Back to this game');
+    const backInFit = past && state.game && finished &&
+      el('button', { class: 'toggle back', onClick: () => openHistory() }, '← Back to this game');
     const resumable = past && !finished;
 
     const subtitle = [
@@ -1755,25 +1845,34 @@ a { color: inherit; }
           ),
         ),
 
-        el('div', { class: 'sheet-body' },
-          past && state.game &&
-            el('button', { class: 'toggle back', onClick: () => openHistory() }, '← Back to this game'),
+        el('div', { class: classes('sheet-body', finished && 'fitted') },
+          back,
 
-          el('p', { class: 'label first' }, finished ? 'Final standings' : 'Standings so far'),
-          el('div', { class: 'ranks' }, result.ranked.map(({ player, points, place }) =>
-            el('div', {
-              class: classes('rank', 'on', place === 1 && 'lead', finished && place === 1 && 'champion'),
-            },
-              el('span', { class: 'place' }, PLACES[place - 1]),
-              el('span', { class: 'rank-name' }, names[player]),
-              el('span', { class: classes('points', points < 0 && 'down') }, signed(points)),
-            ),
-          )),
-
-          el('p', { class: 'label' }, 'Every hand'),
-          Ledger({ names, startIdx, hands, perKingdom, totals }),
-
-          PastGames(past ? past.id : null),
+          finished
+            // One block, no labels, scaled to fit — a screenshot of the whole result.
+            ? el('div', { class: 'fit' }, el('div', { class: 'fit-inner' },
+                backInFit,
+                el('div', { class: 'podium' }, result.ranked.map(({ player, points, place }) =>
+                  el('div', { class: classes('podium-seat', place === 1 && 'lead') },
+                    el('span', { class: 'podium-place' }, PLACES[place - 1]),
+                    el('span', { class: 'podium-name' }, names[player]),
+                    el('span', { class: classes('podium-score', points < 0 && 'down') }, signed(points)),
+                  ),
+                )),
+                Ledger({ names, startIdx, hands, perKingdom, totals, seats, leader, final: true }),
+              ))
+            : [
+                el('p', { class: 'label first' }, 'Standings so far'),
+                el('div', { class: 'ranks' }, result.ranked.map(({ player, points, place }) =>
+                  el('div', { class: classes('rank', 'on', place === 1 && 'lead') },
+                    el('span', { class: 'place' }, PLACES[place - 1]),
+                    el('span', { class: 'rank-name' }, names[player]),
+                    el('span', { class: classes('points', points < 0 && 'down') }, signed(points)),
+                  ),
+                )),
+                el('p', { class: 'label' }, 'Every hand'),
+                Ledger({ names, startIdx, hands, perKingdom, totals, seats, leader }),
+              ],
         ),
 
         el('footer', { class: 'sheet-foot' },
@@ -1795,38 +1894,46 @@ a { color: inherit; }
     );
   }
 
-  // Hand-by-hand points, grouped into the kingdom each hand belongs to.
-  function Ledger({ names, startIdx, hands, perKingdom, totals }) {
+  // Hand-by-hand points, grouped into the kingdom each hand belongs to. `seats` is the
+  // column order — rank once the game is over, so the table lines up with the podium
+  // above it and the winner reads leftmost.
+  function Ledger({ names, startIdx, hands, perKingdom, totals, seats, leader, final }) {
     const rows = [];
+    const lead = (player) => leader && leader[player] && 'lead';
 
     hands.forEach((hand, i) => {
       if (i % perKingdom === 0) {
         const kingdom = i / perKingdom;
         rows.push(el('tr', { class: 'ledger-kingdom' },
-          el('td', { colSpan: names.length + 1 },
+          el('td', { colSpan: seats.length + 1 },
             `Kingdom ${kingdom + 1} · ${names[(startIdx + kingdom) % PLAYERS]}`),
         ));
       }
       const scores = scoreHand(hand);
       rows.push(el('tr', null,
         el('th', { class: 'ledger-contract', scope: 'row' }, CONTRACTS[hand.contract].name),
-        scores.map((points) =>
-          el('td', { class: classes('ledger-value', points > 0 && 'up', points < 0 && 'down') },
-            signed(points))),
+        seats.map((player) =>
+          el('td', {
+            class: classes('ledger-value', lead(player),
+              scores[player] > 0 && 'up', scores[player] < 0 && 'down'),
+          }, signed(scores[player]))),
       ));
     });
 
     return el('div', { class: 'ledger-wrap' },
-      el('table', { class: 'ledger' },
+      el('table', { class: classes('ledger', final && 'final') },
         el('thead', null, el('tr', null,
           el('td', null),
-          names.map((name) => el('th', { scope: 'col' }, name)),
+          seats.map((player) =>
+            el('th', { class: classes(lead(player)), scope: 'col' }, names[player])),
         )),
         el('tbody', null, rows),
         el('tfoot', null, el('tr', null,
           el('th', { scope: 'row' }, 'Total'),
-          totals.map((points) =>
-            el('td', { class: classes('ledger-value', points < 0 && 'down') }, signed(points))),
+          seats.map((player) =>
+            el('td', {
+              class: classes('ledger-value', lead(player), totals[player] < 0 && 'down'),
+            }, signed(totals[player]))),
         )),
       ),
     );
