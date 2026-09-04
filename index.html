@@ -608,13 +608,20 @@ a { color: inherit; }
 .fit-inner {
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding: 16px 0;
+  gap: 16px;
+  padding: 14px 0;
   transform-origin: top left;
 }
-.ledger.final th, .ledger.final td { padding: 6px 3px; }
-.ledger.final .ledger-kingdom td { padding: 16px 0 5px; }
+/* The finished card is scaled to fit, so it is set a size or two larger than the
+   in-progress ledger to survive that scaling and still be read on a phone. */
+.ledger.final th, .ledger.final td { padding: 5px 3px; }
+.ledger.final .ledger-kingdom td { font-size: 11px; padding: 13px 0 4px; }
+.ledger.final thead th { font-size: 11px; }
+.ledger.final .ledger-contract { font-size: 13px; }
+.ledger.final .ledger-value { font-size: 14px; }
+.ledger.final tfoot th { font-size: 11px; }
 .ledger.final tfoot th, .ledger.final tfoot td { padding-top: 11px; }
+.ledger.final tfoot .ledger-value { font-size: 17px; }
 
 .podium { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .podium-seat {
@@ -631,7 +638,7 @@ a { color: inherit; }
 .podium-seat.lead { background: var(--wash); border-color: var(--cream); }
 .podium-place {
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.04em;
   color: var(--dim);
@@ -644,9 +651,10 @@ a { color: inherit; }
 }
 .podium-name {
   max-width: 100%;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--dim);
+  /* Stepped back from the winner, but still a name to be read, not a caption. */
+  color: rgba(234, 221, 202, 0.72);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -654,13 +662,13 @@ a { color: inherit; }
 .podium-score {
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 700;
-  color: var(--dim);
+  color: rgba(234, 221, 202, 0.78);
 }
 /* First place carries the result, so it is the one thing in the card that is loud. */
-.podium-seat.lead .podium-name { font-size: 14px; font-weight: 800; color: var(--cream); }
-.podium-seat.lead .podium-score { font-size: 18px; color: var(--cream); }
+.podium-seat.lead .podium-name { font-size: 16px; font-weight: 800; color: var(--cream); }
+.podium-seat.lead .podium-score { font-size: 22px; color: var(--cream); }
 .podium-score.down,
 .podium-seat.lead .podium-score.down { color: var(--red); }
 
@@ -756,7 +764,7 @@ a { color: inherit; }
 /* Most cells in a finished card are zeros. They have to be there for the columns to
    add up, but they carry nothing, so they recede almost to the paper and let the
    scores that did happen carry the table. */
-.ledger-value.zero { color: rgba(234, 221, 202, 0.15); }
+.ledger-value.zero { color: rgba(234, 221, 202, 0.13); }
 .ledger tbody .ledger-kingdom:not(:first-child) td { border-top: 1px solid var(--line); }
 .ledger-kingdom td {
   padding: 11px 0 3px;
